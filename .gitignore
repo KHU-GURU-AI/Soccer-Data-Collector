@@ -1,0 +1,5 @@
+# vscode workspace config
+.vscode/
+
+# python venv
+depth/

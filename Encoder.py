@@ -17,7 +17,7 @@ Encoder
 video to images of frames
 """
 class Encoder(threading.Thread):
-    def __init__(self, video_path, save_path, interval=1):
+    def __init__(self, video_path, save_path, interval=1, thread_no=0):
         threading.Thread.__init__(self)
 
         self.video_path = os.path.abspath(video_path)
@@ -30,6 +30,7 @@ class Encoder(threading.Thread):
             self.save_path = os.path.abspath(save_path)
 
         self.interval = interval
+        self.thread_no = thread_no
     
     def run(self):
         file_name = self.video_path.split('/')[-1][:-4]
@@ -53,7 +54,7 @@ class Encoder(threading.Thread):
                                      "{}.jpg".format(spend_time)), frame)
 
             if spend_time % 100 == 0:
-                print("[{:<.30}] \t Progress : {:.2f} %".format(file_name, spend_time/(max_frame/fps)))
+                print("[{:2}][{:<.30}] \t Progress : {:.2f} %".format(self.thread_no, file_name, 100*spend_time/(max_frame/fps)))
 
             spend_time += self.interval
             cur_frame = spend_time * fps * self.interval
@@ -82,8 +83,8 @@ class Video_to_Images():
     def run(self):
         cur = 0
 
-        for _ in range(self.workers):
-            w = Encoder(self.videos[cur], self.save_dir, self.interval)
+        for i in range(self.workers):
+            w = Encoder(self.videos[cur], self.save_dir, self.interval, thread_no=i)
             w.start()
             self.worker_list.append(w)
             cur += 1
@@ -91,7 +92,7 @@ class Video_to_Images():
         while cur > self.video_count:
             for i, w in enumerate(self.worker_list):
                 if not w.isAlive():
-                    w = Encoder(self.videos[cur], self.save_dir, self.interval)
+                    w = Encoder(self.videos[cur], self.save_dir, self.interval, thread_no=i)
                     w.start()
                     self.worker_list[i] = w
                     cur += 1

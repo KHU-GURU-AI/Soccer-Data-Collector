@@ -53,7 +53,7 @@ class Encoder(threading.Thread):
                                      "{}.jpg".format(spend_time)), frame)
 
             if spend_time % 100 == 0:
-                print("[{:<.30}] \t Progress : {:.2f} %".format(file_name, spend_time/(max_frame/fps)))
+                print("[{:<.30}] \t Progress : {:.2f} %".format(file_name, 100*spend_time/(max_frame/fps)))
 
             spend_time += self.interval
             cur_frame = spend_time * fps * self.interval

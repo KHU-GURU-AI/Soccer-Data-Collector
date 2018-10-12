@@ -6,6 +6,8 @@ video to image sequence
 
 import os
 import sys
+import threading
+import argparse
 
 import cv2
 
@@ -14,55 +16,96 @@ Encoder
 
 video to images of frames
 """
-class Encoder():
-    def __init__(self, video_dir, save_path=None, sec=1):
-        self.video_dir = video_dir
+class Encoder(threading.Thread):
+    def __init__(self, video_path, save_path, interval=1):
+        threading.Thread.__init__(self)
+
+        self.video_path = os.path.abspath(video_path)
+        assert os.path.exists(self.video_path)
+        assert os.path.isfile(self.video_path)
+
         if save_path is None:
-            self.save_path = os.path.join(video_dir, "real")
+            self.save_path = os.path.join(video_path, "real")
         else:
-            self.save_path = save_path
-        self.sec = sec
+            self.save_path = os.path.abspath(save_path)
 
-        self.videos = [os.path.join(video_dir, file_name) for file_name in os.listdir(video_dir)]
-
-        # check save directory 
-        if os.path.exists(self.save_path):
-            if not os.path.isdir(self.save_path):
-                raise Exception("save_path {} is not directoy.".format(self.save_path))
-        else:
-            os.mkdir(self.save_path, mode=0o0755)
+        self.interval = interval
     
-    def encoding(self, video_path, file_header=None):
-        if file_header is None:
-            file_header = video_path
+    def run(self):
+        file_name = self.video_path.split('/')[-1][:-4]
+        save_path = os.path.join(self.save_path, file_name)
 
-        video = cv2.VideoCapture(video_path)
+        if not os.path.exists(save_path):
+            os.mkdir(save_path)
+
+        video = cv2.VideoCapture(self.video_path)
         fps = video.get(5)
         max_frame = video.get(7)
 
-        print("[{}] fps: {}, max_frame: {}".format(file_header, fps, max_frame))
+        # print("[{:.10s}] fps: {:.2f}, max_frame: {:f}".format(file_name, fps, max_frame))
 
         spend_time = 0
         cur_frame = 0
         while cur_frame <= max_frame:
             video.set(1, cur_frame)
             _, frame = video.read()
-            cv2.imwrite(os.path.join(self.save_path, \
-                                        "{}_{}.jpg".format(file_header, spend_time)), frame)
-            spend_time += 1
-            cur_frame = spend_time * fps
+            cv2.imwrite(os.path.join(save_path, \
+                                     "{}.jpg".format(spend_time)), frame)
 
+            if spend_time % 100 == 0:
+                print("[{:<.30}] \t Progress : {:.2f} %".format(file_name, spend_time/(max_frame/fps)))
+
+            spend_time += self.interval
+            cur_frame = spend_time * fps * self.interval
 
         video.release()
         cv2.destroyAllWindows()
 
-    def encode_all(self, report=True):
-        for i, file_name in enumerate(self.videos):
-            if report:
-                print("Start {}".format(file_name))
-            self.encoding(file_name, i)
+
+class Video_to_Images():
+    def __init__(self, video_dir, save_dir, interval=1, workers=1):
+        self.video_dir = video_dir
+        self.save_dir = save_dir
+        # check save directory 
+        if os.path.exists(self.save_dir):
+            assert os.path.isdir(self.save_dir)
+        else:
+            os.mkdir(self.save_dir, mode=0o0755)
+        self.interval = interval
+        self.workers = workers
+
+        self.videos = [os.path.join(video_dir, file_name) for file_name in os.listdir(self.video_dir)]
+        self.video_count = len(self.videos)
+
+        self.worker_list = []
+
+    def run(self):
+        cur = 0
+
+        for _ in range(self.workers):
+            w = Encoder(self.videos[cur], self.save_dir, self.interval)
+            w.start()
+            self.worker_list.append(w)
+            cur += 1
+        
+        while cur > self.video_count:
+            for i, w in enumerate(self.worker_list):
+                if not w.isAlive():
+                    w = Encoder(self.videos[cur], self.save_dir, self.interval)
+                    w.start()
+                    self.worker_list[i] = w
+                    cur += 1
+                    break
 
 
 if __name__ == '__main__':
-    en = Encoder("/home/kairos/Videos/4K Video Downloader/")
-    en.encode_all()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('video_dir', type=str)
+    parser.add_argument('--save_dir', type=str, default='./real')
+    parser.add_argument('-i', '--interval', type=int, default=1)
+    parser.add_argument('-w', '--workers', type=int, default=1)
+    args = parser.parse_args()
+
+    v2i = Video_to_Images(args.video_dir, args.save_dir, interval=args.interval, workers=args.workers)
+    v2i.run()

@@ -1,5 +1,4 @@
 import os
-import sys
 import mxnet as mx
 import numpy as np
 import cv2
@@ -85,50 +84,6 @@ def addto_db(db_path, path, suffix_list, chunk_size=24 * 60 * 3, chunk_base=1000
         txn.put('N', str(N + 1))
         txn.put('prefix_list', ','.join(prefix_list))
         txn.put('idx', '$'.join(idx))
-
-
-def show_db(fdb, suffix_list):
-    print('Showing db ' + fdb)
-    env = lmdb.open(fdb, max_dbs=5)
-    with env.begin() as txn:
-        N = int(txn.get('N'))
-        chunk_size = int(txn.get('chunk_size'))
-        chunk_base = int(txn.get('chunk_base'))
-        movie_base = int(txn.get('movie_base'))
-        prefix_list = txn.get('prefix_list')
-        idx = [[[int(k) for k in j.split(',')] for j in i.split('|')] for i in txn.get('idx').split('$')]
-        print(len(idx))
-        print(prefix_list)
-        print(N, chunk_size, chunk_base, movie_base)
-
-    assert len(prefix_list.split(',')) == N
-    assert len(idx) == N
-
-    for i in range(N):
-        print('mov', i)
-        base = i * movie_base
-        ichunk = 0
-        while True:
-            pj = None
-            for suffix in suffix_list:
-                with env.begin(db=env.open_db(suffix)) as txn:
-                    for j in range(chunk_base):
-                        v = txn.get('%09d' % (base + ichunk * chunk_base + j))
-                        if v is None:
-                            break
-                        assert base + ichunk * chunk_base + j == idx[i][ichunk][j]
-                assert pj is None or pj == j
-                pj = j
-            if j > 0:
-                assert ichunk < len(idx[i])
-                assert j == len(idx[i][ichunk]), '%d vs %d' % (j, len(idx[i][ichunk]))
-                print('chunk', ichunk)
-                ichunk += 1
-            if j < chunk_size - 1:
-                print('mov', i, 'finish at', ichunk)
-                break
-        assert ichunk == len(idx[i])
-
 
 def shuffle(path, valid_ratio=0.1, test_ratio=0.3):
     sidx = ''
@@ -365,6 +320,8 @@ class Mov3dStack(mx.io.DataIter):
                     ret, frame = self.caps[mov].read()
                     assert ret
                     margin = (frame.shape[0] - 800) / 2
+                    #rfream 구하는 곳 프레임에 맞게 한장한장
+                    #여기 싸그리다 무시
                     lframe, rframe = split(frame, reshape=self.base_shape, vert=True,
                                            clip=(0, margin, 960, margin + 800))
 
@@ -441,7 +398,7 @@ class Mov3dStack(mx.io.DataIter):
             return mx.io.DataBatch(data, [mx.nd.array(right)], pad, None)
 
 
-def load_vgg(data_frames=1, flow_frames=1, two_stream=False):
+def load_vgg(data_frames=1, flow_frames=1):
     vgg16 = {name: arr for name, arr in mx.nd.load('vgg16-0001.params').items() if name.startswith('arg:conv')}
     conv1_weight = vgg16['arg:conv1_1_weight']
 
@@ -461,15 +418,13 @@ def load_vgg(data_frames=1, flow_frames=1, two_stream=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Put recordio files into lmdb')
-    parser.add_argument('path', type=str, help='Path to folder containing recordio files')
-    parser.add_argument('fdb', type=str, help='Path to output lmdb')
+    parser.add_argument('path', type=str,default="이미지 파일 경로", help='Path to folder containing recordio files')
+    parser.add_argument('fdb', type=str, default="저장 파일 경로" ,help='Path to output lmdb')
     args = parser.parse_args()
 
     path = args.path
     fdb = args.fdb
     suffix_list = ['l', 'r']
-    # uncomment if working with optical flow or depth data.
-    # suffix_list = ['depth', 'flow', 'l', 'r']
 
     pset = set()
     for fname in os.listdir(path):
@@ -479,6 +434,5 @@ if __name__ == '__main__':
     for fname in pset:
         addto_db(fdb, path + fname, suffix_list)
 
-    # show_db(fdb, suffix_list)
     shuffle(fdb)
     make_idx(fdb)
